@@ -1,7 +1,9 @@
-import { test, Page, BrowserContext } from '@playwright/test';
+import { test } from '@playwright/test';
 import { performLogin } from './loginHelper';
+import { CreateJobPage } from './pages/CreateJobPage';
+import { BasePage } from './pages/BasePage';
 
-// Generates names like `Automation18/05/2026(1)`, `Automation18/05/2026(2)`, ...
+// Generates Job names ---------
 let automationCounter = 0;
 let automationDate = '';
 function nextAutomationName() {
@@ -18,91 +20,6 @@ function nextAutomationName() {
   return `TestAutomation${formattedDate}(${automationCounter})`;
 }
 
-async function closeAllPopups(page: Page) {
-  const popupSelectors = [
-    '[role="dialog"] [aria-label="Close"]',
-    '[role="dialog"] button:has-text("Close")',
-    '[role="dialog"] button:has-text("Cancel")',
-    '.ui-dialog-titlebar-close',
-    '.k-window-action .k-i-close',
-    '.modal-header button.close',
-    '.modal button.close',
-    '[aria-label="Close"]',
-    'button:has-text("Close")',
-    'button:has-text("Cancel")',
-    'button:has-text("No")',
-    'button:has-text("Yes")',
-    'button:has-text("Ok")',
-    'button:has-text("OK")',
-    'button:has-text("×")',
-  ];
-
-  for (const selector of popupSelectors) {
-    const locator = page.locator(selector);
-    const count = await locator.count();
-    for (let i = 0; i < count; i++) {
-      const element = locator.nth(i);
-      if (await element.isVisible()) {
-        await element.click({ force: true }).catch(() => {});
-      }
-    }
-  }
-}
-
-async function removePopupOverlays(page: Page) {
-  await page.evaluate(() => {
-    const selectors = [
-      '[role="dialog"]',
-      '.modal',
-      '.ui-dialog',
-      '.k-overlay',
-      '.popup',
-      '.rwWindow',
-      '.radWindow',
-      '.jqmWindow',
-      '.overlay',
-      '#walkme-overlay-all',
-      '[id*="walkme"]',
-      '[class*="walkme"]',
-      '[data-walkme]',
-    ];
-    selectors.forEach(selector => {
-      document.querySelectorAll(selector).forEach(element => {
-        element.remove();
-      });
-    });
-  });
-}
-
-async function handlePagePopups(page: Page) {
-  for (let i = 0; i < 5; i++) {
-    await closeAllPopups(page);
-    await removePopupOverlays(page);
-    await page.waitForTimeout(300);
-  }
-}
-
-function registerChildPopupHandler(context: BrowserContext, mainPage: Page) {
-  context.on('page', async newPage => {
-    if (newPage === mainPage) return;
-    await newPage.waitForLoadState('domcontentloaded').catch(() => {});
-    await newPage.close().catch(() => {});
-  });
-}
-
-async function closeChildPages(context: BrowserContext, mainPage: Page) {
-  for (const otherPage of context.pages()) {
-    if (otherPage !== mainPage && !otherPage.isClosed()) {
-      await otherPage.close().catch(() => {});
-    }
-  }
-}
-
-async function restoreMainPage(mainPage: Page) {
-  await mainPage.bringToFront().catch(() => {});
-  await mainPage.waitForLoadState('domcontentloaded').catch(() => {});
-}
-
 test.describe('Create Job Tests', () => {
   let storageState: any;
 
@@ -112,8 +29,10 @@ test.describe('Create Job Tests', () => {
 
   test('Create_Job', async ({ browser }) => {
     const context = await browser.newContext({ storageState });
-    const page = await context.newPage();
-    registerChildPopupHandler(context, page);
+    let page = await context.newPage();
+    const base = new BasePage(page);
+    const createJob = new CreateJobPage(page);
+    base.registerChildPopupHandler(context);
     page.on('dialog', async dialog => {
       console.log(`Dialog message: ${dialog.message()}`);
       await dialog.dismiss().catch(() => {});
@@ -121,69 +40,65 @@ test.describe('Create Job Tests', () => {
 
     await page.goto('https://solitaire-ngs.net/DKI/Next/Home/');
     await page.waitForLoadState('domcontentloaded');
-    await closeChildPages(context, page);
-    await restoreMainPage(page);
-    await handlePagePopups(page);
+    await base.closeChildPages(context);
+    await base.restoreMainPage();
+    await base.handlePopups();
 
-    await page.goto('https://solitaire-ngs.net/DKI/Module/Job/CreateJob.aspx');
-    await page.waitForLoadState('domcontentloaded');
-    await closeChildPages(context, page);
-    await restoreMainPage(page);
-    await handlePagePopups(page);
-    await page.waitForSelector('#ctl00_ContentPlaceHolder1_JobParentInformation_GenaralInfo_JobNameRadTextBox', { state: 'visible', timeout: 30000 });
-    await closeChildPages(context, page);
-    await restoreMainPage(page);
-    await handlePagePopups(page);
+    await createJob.goto('https://solitaire-ngs.net/DKI/Module/Job/CreateJob.aspx');
+    await base.closeChildPages(context);
+    await base.restoreMainPage();
+    await base.handlePopups();
 
-    await page.locator('#ctl00_ContentPlaceHolder1_JobParentInformation_GenaralInfo_JobNameRadTextBox').click();
-    await page.locator('#ctl00_ContentPlaceHolder1_JobParentInformation_GenaralInfo_JobNameRadTextBox').fill(nextAutomationName());
-    await page.getByRole('link', { name: 'Open the Calendar Popup', exact: true }).click();
+    await createJob.fillJobName(nextAutomationName());
     // select the day before the current date (yesterday)
     const prevDate = new Date();
     prevDate.setDate(prevDate.getDate() - 1);
     const prevDayStr = String(prevDate.getDate());
     // give the calendar a moment and close any popups if needed
-    await handlePagePopups(page);
-    await page.getByRole('link', { name: prevDayStr }).click();
-    await page.locator('#ctl00_ContentPlaceHolder1_JobParentInformation_GenaralInfo_comboBox_LossType_Arrow').click();
-    await page.getByText('Water', { exact: true }).click();
-    await page.locator('#ctl00_ContentPlaceHolder1_JobParentInformation_GenaralInfo_DropDown_ReportedBY_Arrow').click();
-    await page.locator('#ctl00_ContentPlaceHolder1_JobParentInformation_GenaralInfo_DropDown_ReportedBY_DropDown').getByText('Customer').click();
-    await page.locator('#ctl00_ContentPlaceHolder1_JobParentInformation_GenaralInfo_comboBox_LossCategory_Arrow').click();
-    await page.getByText('commercial').click();
-    await page.locator('#ctl00_ContentPlaceHolder1_JobParentInformation_GenaralInfo_SourceOfLossComboBox_Arrow').click();
-    await page.getByText('Fire Hydrant').click();
-    
-    await page.locator('#ctl00_ContentPlaceHolder1_JobParentInformation_GenaralInfo_JobSizeComboBox_Arrow').click();
-    await page.getByText('Large', { exact: true }).click();
-    await page.locator('#ctl00_ContentPlaceHolder1_JobParentInformation_DropDown_Customer_Arrow').click();
-    await page.getByRole('cell', { name: 'Broker, Billy (BROKER COMPANY)' }).click();
-    await page.getByRole('checkbox', { name: 'Same as Customer Address' }).check();
-    await page.locator('#ctl00_ContentPlaceHolder1_JobParentInformation_InternalParticpantsControl_InternalParticipantsList_ctl00_EstimatorComboBox_Arrow').click();
-    await page.getByText('Admin, NGS').click();
-    await page.locator('#ctl00_ContentPlaceHolder1_JobParentInformation_InternalParticpantsControl_InternalParticipantsList_ctl03_EstimatorComboBox_Arrow').click();
-    await page.locator('#ctl00_ContentPlaceHolder1_JobParentInformation_InternalParticpantsControl_InternalParticipantsList_ctl03_EstimatorComboBox_DropDown').getByText('Robinson, Bill').click();
-    await page.locator('#ctl00_ContentPlaceHolder1_JobParentInformation_InternalParticpantsControl_InternalParticipantsList_ctl01_EstimatorComboBox_Arrow').click();
-    await page.locator('#ctl00_ContentPlaceHolder1_JobParentInformation_InternalParticpantsControl_InternalParticipantsList_ctl01_EstimatorComboBox_DropDown').getByText('Pena, Sue').click();
-    await page.locator('#ctl00_ContentPlaceHolder1_JobParentInformation_InternalParticpantsControl_InternalParticipantsList_ctl02_EstimatorComboBox_Arrow').click();
-    await page.locator('#ctl00_ContentPlaceHolder1_JobParentInformation_InternalParticpantsControl_InternalParticipantsList_ctl02_EstimatorComboBox_DropDown').getByText('dhage, Aboli').click();
-    await page.locator('#ctl00_ContentPlaceHolder1_JobParentInformation_ExternalParticipants_SystemIndividualParticipantCombobox_4_Arrow').click();
-    await page.getByText('Squad, Rogue').click();
-    await page.getByRole('checkbox', { name: 'Water Mitigation' }).check();
-    await page.getByRole('checkbox', { name: 'Roofing' }).check();
-    await page.getByRole('textbox', { name: 'Enter Loss Description' }).click();
-    await page.getByRole('textbox', { name: 'Enter Loss Description' }).fill('Test1');
-    await page.getByRole('textbox', { name: 'Enter Loss Description' }).press('Tab');
-    await page.getByRole('textbox', { name: 'Enter Loss Description' }).fill('Test1Test2');
-    await page.getByRole('textbox', { name: 'Enter Special Instructions' }).fill('Test3');
+    await base.handlePopups();
+    await createJob.openCalendarAndSelectDay(prevDayStr);
+    // short wait to allow any popups or navigations to settle
+    await page.waitForTimeout(500);
+    // recover if the page was closed by a popup handler or navigation
+    if (page.isClosed && page.isClosed()) {
+      const pages = context.pages();
+      const newMain = pages.find(p => !p.isClosed());
+      if (!newMain) throw new Error('Main page was closed and no replacement page found');
+      page = newMain;
+      // recreate page object wrappers for the new page
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const newBase = new BasePage(page);
+      // reassign createJob so subsequent calls use the active page
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const newCreateJob = new CreateJobPage(page);
+      await newBase.restoreMainPage();
+      await newBase.handlePopups();
+    }
 
-    await page.getByText('Basement').click();
-    await page.getByRole('link', { name: 'To Right' }).click();
+    await createJob.selectLossTypeWater();
+    await createJob.selectReportedByCustomer();
+    await createJob.selectLossCategoryCommercial();
+    await createJob.selectSourceOfLossFireHydrant();
+    await createJob.selectJobSizeLarge();
+    await createJob.chooseCustomer();
+    await createJob.checkSameAsCustomer();
+    await createJob.selectInternalParticipantAdmin();
+    await createJob.selectInternalParticipantRobinson();
+    await createJob.selectInternalParticipantPena();
+    await createJob.selectInternalParticipantDhage();
+    await createJob.selectExternalParticipantSquad();
+    await createJob.checkWaterMitigation();
+    await createJob.checkRoofing();
+    await createJob.fillLossDescription('Test1', 'Test1Test2');
+    await createJob.fillSpecialInstructions('Test3');
+
+    await createJob.clickBasement();
+    await createJob.clickToRight();
     page.once('dialog', dialog => {
       console.log(`Dialog message: ${dialog.message()}`);
       dialog.dismiss().catch(() => {});
     });
-    await page.getByRole('button', { name: 'Save & Go to Slideboard' }).click();
+    await createJob.clickSave();
 
     await page.pause();
 

@@ -1,5 +1,6 @@
-import { test, chromium } from '@playwright/test';
+import { test } from '@playwright/test';
 import { performLogin } from './loginHelper';
+import { DashPage } from './pages/DashPage';
 
 test.describe('Login Tests', () => {
   let storageState: any;
@@ -19,12 +20,14 @@ test.describe('Login Tests', () => {
   test('LoginPage_Validation', async ({ browser }) => {
     const context = await browser.newContext({ storageState });
     const page = await context.newPage();
-    await page.goto('https://solitaire-ngs.net/DKI/Next/Home/');
-    await page.locator('.sprite-dash-support').click();
-    await page.getByText('Welcome').click();
-    await page.locator('b').filter({ hasText: /^User$/ }).click();
-    await page.goto('https://solitaire-ngs.net/DKI/Next/Home/');
-    await page.goto('https://solitaire-ngs.net/DKI/Next/Home/');
+    const dash = new DashPage(page);
+
+    await dash.openHome();
+    await dash.openSupportMenu();
+    await dash.clickWelcomeText();
+    await dash.clickUserBoldFilter();
+    await dash.openHome();
+    await dash.openHome();
     await context.close();
   });
 });
